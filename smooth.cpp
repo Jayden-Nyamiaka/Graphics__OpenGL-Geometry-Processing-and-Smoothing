@@ -99,6 +99,8 @@ void mouse_pressed(int button, int state, int x, int y);
 void mouse_moved(int x, int y);
 void key_pressed(unsigned char key, int x, int y);
 
+void parseFormatFile(string filename);
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /* The following structs do not involve OpenGL, but they are useful ways to
@@ -236,12 +238,18 @@ struct Object
     vector<Vec3f> normal_buffer;
 
     Mesh_Data *mesh;
-    vector<HEV *> *hevs;
+    vector<HEV *> *hevs; // normals stored here
     vector<HEF *> *hefs;
-    vector<Vec3f *> *normals;
     
     vector<Instance> instances;
 };
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/* Time step (in __________) given by the user that controls 
+ * the speed of the smoothing 
+ */
+float time_step_h;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -302,16 +310,6 @@ float x_view_angle = 0, y_view_angle = 0;
 
 bool is_pressed = false;
 bool wireframe_mode = false;
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-/* The following function prototypes are for helper functions that parse the given 
- * format file to extract all the scene data and populate our map of objects.
- *
- * Details of the function will be given in its implementation further below.
- */
-
-void parseFormatFile(string filename);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1310,7 +1308,7 @@ void key_pressed(unsigned char key, int x, int y)
 
 
 // Computes the area-weighted normal of a vertex using the halfedge data
-Vec3f calculateVertexNormal(HEV *vertex)
+Vec3f *calculateVertexNormal(HEV *vertex)
 {
     Vector3f normal (0.0f, 0.0f, 0.0f);
 
@@ -1347,7 +1345,8 @@ Vec3f calculateVertexNormal(HEV *vertex)
     normal.normalize();
 
     // Converts our normal into a Vec3f and returns it
-    Vec3f n = {normal[0], normal[1], normal[2]};
+    Vec3f *n = new Vec3f;
+    *n = {normal[0], normal[1], normal[2]};
     return n;
 }
 
@@ -1383,8 +1382,8 @@ void parseObjFile(string filename, Object &obj)
     obj.mesh->faces = new vector<Face *>();
     obj.mesh->vertices->push_back(NULL);
 
-
     // Reads in the vertices and faces into the object's mesh
+    int count = 1;
     vector<string> element;
     while (getline(file, buffer)) {
         element.clear();
@@ -1392,14 +1391,17 @@ void parseObjFile(string filename, Object &obj)
 
         // Parses the line as a vertex
         if (element[0] == "v") {
-            Vertex vert = {stof(element[1]), stof(element[2]), stof(element[3])};
-            obj.mesh->vertices->push_back(&vert);
+            Vertex *vert = new Vertex;
+            *vert = {stof(element[1]), stof(element[2]), stof(element[3])};
+            obj.mesh->vertices->push_back(vert);
+
             continue;
         } 
 
         /* If not a vertex, parses the line as a face */
-        Face f = {stoi(element[1]), stoi(element[2]), stoi(element[3])};
-        obj.mesh->faces->push_back(&f);
+        Face *f = new Face;
+        *f = {stoi(element[1]), stoi(element[2]), stoi(element[3])};
+        obj.mesh->faces->push_back(f);
     }
 
     // Builds the halfedge structures
@@ -1408,34 +1410,33 @@ void parseObjFile(string filename, Object &obj)
     build_HE(obj.mesh, obj.hevs, obj.hefs);
 
     // Computes and stores all the area-weighted vertex normals
-    obj.normals = new vector<Vec3f *>();
-    obj.normals->push_back(NULL);
-    for (int vIdx = 0; vIdx < obj.hevs->size(); vIdx++) {
-        Vec3f normal = calculateVertexNormal((*(obj.hevs))[vIdx]);
-        obj.normals->push_back(&normal);
+    for (int vIdx = 1; vIdx < obj.hevs->size(); vIdx++) {
+        HEV *hev = obj.hevs->at(vIdx);
+        Vec3f *normal = calculateVertexNormal(hev);
+        hev->normal = *normal;
     }
 
     // Populates vertex and normal buffers using our mesh data and computed normals
     for (int fIdx = 0; fIdx < obj.mesh->faces->size(); fIdx++) {
-        Face *f = (*(obj.mesh->faces))[fIdx];
+        Face *f = obj.mesh->faces->at(fIdx);
 
         // First Vertex of the Face 
-        Vertex *v1 = (*(obj.mesh->vertices))[f->idx1];
-        Vec3f *n1 = (*(obj.normals))[f->idx1];
+        Vertex *v1 = obj.mesh->vertices->at(f->idx1);
+        Vec3f n1 = obj.hevs->at(f->idx1)->normal;
         obj.vertex_buffer.push_back(*v1);
-        obj.normal_buffer.push_back(*n1);
+        obj.normal_buffer.push_back(n1);
 
         // Second Vertex of the Face 
-        Vertex *v2 = (*(obj.mesh->vertices))[f->idx2];
-        Vec3f *n2 = (*(obj.normals))[f->idx2];
+        Vertex *v2 = obj.mesh->vertices->at(f->idx2);
+        Vec3f n2 = obj.hevs->at(f->idx2)->normal;
         obj.vertex_buffer.push_back(*v2);
-        obj.normal_buffer.push_back(*n2);
+        obj.normal_buffer.push_back(n2);
 
         // Third Vertex of the Face 
-        Vertex *v3 = (*(obj.mesh->vertices))[f->idx3];
-        Vec3f *n3 = (*(obj.normals))[f->idx3];
+        Vertex *v3 = obj.mesh->vertices->at(f->idx3);
+        Vec3f n3 = obj.hevs->at(f->idx3)->normal;
         obj.vertex_buffer.push_back(*v3);
-        obj.normal_buffer.push_back(*n3);
+        obj.normal_buffer.push_back(n3);
     }
 
     file.close();
@@ -1629,8 +1630,9 @@ void destroy_objects() {
 
 
 void usage(void) {
-    cerr << "Enter input in the form: scene_description_file.txt xres yres\n\t"
-            "xres, yres must be positive integers\n";
+    cerr << "usage: scene_description_file.txt xres yres h\n\t"
+            "xres, yres (screen resolution) must be positive integers\n\t"
+            "h (smoothing time step) must be a positive float (large values may cause error)\n";
     exit(1);
 }
 
@@ -1644,12 +1646,13 @@ int main(int argc, char* argv[])
     /* Checks that the user inputted the right parameters into the command line
      * and stores xres, yres, and filename to their respective fields
      */
-    if (argc != 4) {
+    if (argc != 5) {
         usage();
     }
     int xres = stoi(argv[2]);
     int yres = stoi(argv[3]);
-    if (xres <= 0 || yres <= 0) {
+    time_step_h = stof(argv[4]);
+    if (xres <= 0 || yres <= 0 || time_step_h <= 0) {
         usage();
     }
 
