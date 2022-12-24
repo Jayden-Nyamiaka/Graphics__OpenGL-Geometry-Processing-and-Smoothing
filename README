@@ -1,0 +1,12 @@
+Compile and Execute Instructions:
+
+    1) The code has 3 executables that can be generated from the Makefile: 
+            - opengl (the Quarternion Implementation of ArcBall)
+            - opengl_matrix (the Matrix Implementation of ArcBall)
+            - demo (the original Demo that lets you move around with wasd)
+
+    2) Run "make opengl" to generate the executable that runs OpenGL with ArcBall.
+
+    3) Run ./opengl [scene_description_file.txt] [xres] [yres] to have that scene open in OpenGL.
+
+    4) Run "make clean" to delete any generated files.
