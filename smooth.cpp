@@ -1320,14 +1320,14 @@ Vec3f calculateVertexNormal(HEV *vertex)
     // Loops to all adjacent vertices of our given vertex
     do {
         // Gets the 3 vertices of the triangle face
-        Vertex *v1 = he->face->he->vertex;
-        Vertex *v2 = he->face->he->next->vertex;
-        Vertex *v3 = he->face->he->next->next->vertex;
+        HEV *v1 = he->face->edge->vertex;
+        HEV *v2 = he->face->edge->next->vertex;
+        HEV *v3 = he->face->edge->next->next->vertex;
 
         // Converts the vertices to Eigen Vectors for computations
-        Vector3f v1Vec (v1.x, v1.y, v1.z);
-        Vector3f v2Vec (v2.x, v2.y, v2.z);
-        Vector3f v3Vec (v3.x, v3.y, v3.z);
+        Vector3f v1Vec (v1->x, v1->y, v1->z);
+        Vector3f v2Vec (v2->x, v2->y, v2->z);
+        Vector3f v3Vec (v3->x, v3->y, v3->z);
 
         // Computes the normal of the plane of the face
         Vector3f face_normal = (v2Vec - v1Vec).cross(v3Vec - v1Vec);
@@ -1378,10 +1378,10 @@ void parseObjFile(string filename, Object &obj)
     }
 
     // Initializes the mesh and 1-indexes its vertices
-    obj->mesh = new Mesh_Data;
-    obj->mesh->vertices = new vector<Vertex *>();
-    obj->mesh->faces = new vector<Face *>();
-    obj->mesh->vertices.push_back(NULL);
+    obj.mesh = new Mesh_Data;
+    obj.mesh->vertices = new vector<Vertex *>();
+    obj.mesh->faces = new vector<Face *>();
+    obj.mesh->vertices->push_back(NULL);
 
 
     // Reads in the vertices and faces into the object's mesh
@@ -1393,47 +1393,47 @@ void parseObjFile(string filename, Object &obj)
         // Parses the line as a vertex
         if (element[0] == "v") {
             Vertex vert = {stof(element[1]), stof(element[2]), stof(element[3])};
-            obj->mesh->vertices.push_back(&vert);
+            obj.mesh->vertices->push_back(&vert);
             continue;
         } 
 
         /* If not a vertex, parses the line as a face */
         Face f = {stoi(element[1]), stoi(element[2]), stoi(element[3])};
-        obj->mesh->faces.push_back(&f);
+        obj.mesh->faces->push_back(&f);
     }
 
     // Builds the halfedge structures
-    obj->hevs = new vector<HEV *>();
-    obj->hefs = new vector<HEF *>();
-    build_HE(obj->mesh, obj->hevs, obj->hefs);
+    obj.hevs = new vector<HEV *>();
+    obj.hefs = new vector<HEF *>();
+    build_HE(obj.mesh, obj.hevs, obj.hefs);
 
     // Computes and stores all the area-weighted vertex normals
-    obj->normals = new vector<Vec3f *>();
-    obj->normals.push_back(NULL);
-    for (int vIdx = 0; vIdx < obj->hevs.size(); vIdx++) {
-        Vec3f normal = calculateVertexNormal(obj->hevs[vIdx]);
-        obj->normals.push_back(&normal);
+    obj.normals = new vector<Vec3f *>();
+    obj.normals->push_back(NULL);
+    for (int vIdx = 0; vIdx < obj.hevs->size(); vIdx++) {
+        Vec3f normal = calculateVertexNormal((*(obj.hevs))[vIdx]);
+        obj.normals->push_back(&normal);
     }
 
     // Populates vertex and normal buffers using our mesh data and computed normals
-    for (int fIdx = 0; fIdx < obj->mesh->faces.size(); fIdx++) {
-        Face *f = obj->mesh->faces[fIdx];
+    for (int fIdx = 0; fIdx < obj.mesh->faces->size(); fIdx++) {
+        Face *f = (*(obj.mesh->faces))[fIdx];
 
         // First Vertex of the Face 
-        Vertex *v1 = obj->mesh->vertices[f->idx1];
-        Vec3f *n1 = obj->normals[f->idx1];
+        Vertex *v1 = (*(obj.mesh->vertices))[f->idx1];
+        Vec3f *n1 = (*(obj.normals))[f->idx1];
         obj.vertex_buffer.push_back(*v1);
         obj.normal_buffer.push_back(*n1);
 
         // Second Vertex of the Face 
-        Vertex *v2 = obj->mesh->vertices[f->idx2];
-        Vec3f *n2 = obj->normals[f->idx2];
+        Vertex *v2 = (*(obj.mesh->vertices))[f->idx2];
+        Vec3f *n2 = (*(obj.normals))[f->idx2];
         obj.vertex_buffer.push_back(*v2);
         obj.normal_buffer.push_back(*n2);
 
         // Third Vertex of the Face 
-        Vertex *v3 = obj->mesh->vertices[f->idx3];
-        Vec3f *n3 = obj->normals[f->idx3];
+        Vertex *v3 = (*(obj.mesh->vertices))[f->idx3];
+        Vec3f *n3 = (*(obj.normals))[f->idx3];
         obj.vertex_buffer.push_back(*v3);
         obj.normal_buffer.push_back(*n3);
     }
@@ -1623,7 +1623,7 @@ void destroy_objects() {
                                     obj_iter != objects.end(); obj_iter++) {
         Object &obj = objects[obj_iter->first];
 
-        delete_HE(obj->hevs, obj->hefs);
+        delete_HE(obj.hevs, obj.hefs);
     }
 }
 
