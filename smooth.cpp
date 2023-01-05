@@ -1679,7 +1679,7 @@ int main(int argc, char* argv[])
     glutInitWindowPosition(0, 0);
     /* The following line tells OpenGL to name the program window "Test".
      */
-    glutCreateWindow("Assignment 3 - Open GL");
+    glutCreateWindow("Assignment 5 - Geometry Processing");
     
     /* Call our 'init' function...
      */
