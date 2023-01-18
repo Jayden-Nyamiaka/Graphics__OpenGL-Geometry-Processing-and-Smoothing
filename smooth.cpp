@@ -1233,25 +1233,27 @@ float rad2deg(float angle)
 // Computes the area-weighted normal of a vertex using the halfedge data
 Vec3f *calculateVertexNormal(HEV *vertex)
 {
+    // Initializes the normal that we'll accumulate
     Vector3f normal (0.0f, 0.0f, 0.0f);
+
+    // Saves the position of our vertex as an Eigen Vector for computations
+    Vector3f v_pos (vertex->x, vertex->y, vertex->z);
 
     // Get the halfedge outgoing from our given vertex
     HE* he = vertex->out; 
 
     // Loops to all adjacent vertices of our given vertex
     do {
-        // Gets the 3 vertices of the triangle face
-        HEV *v1 = he->vertex;
+        // Gets the 2 other vertices of the triangle face
         HEV *v2 = he->next->vertex;
         HEV *v3 = he->next->next->vertex;
 
         // Converts the vertices to Eigen Vectors for computations
-        Vector3f v1Vec (v1->x, v1->y, v1->z);
-        Vector3f v2Vec (v2->x, v2->y, v2->z);
-        Vector3f v3Vec (v3->x, v3->y, v3->z);
+        Vector3f v2_pos (v2->x, v2->y, v2->z);
+        Vector3f v3_pos (v3->x, v3->y, v3->z);
 
         // Computes the normal of the plane of the face
-        Vector3f face_normal = (v2Vec - v1Vec).cross(v3Vec - v1Vec);
+        Vector3f face_normal = (v2_pos - v_pos).cross(v3_pos - v_pos);
         
         // Computes the area of the triangular face
         float face_area = 0.5 * face_normal.norm();
