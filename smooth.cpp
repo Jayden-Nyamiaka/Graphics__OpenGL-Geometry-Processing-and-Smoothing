@@ -68,6 +68,7 @@
 
 /* Eigen Library included for ArcBall */
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 using Eigen::Vector3f;
 using Eigen::Matrix4f;
 
@@ -76,7 +77,6 @@ using Eigen::Matrix4f;
 #include "halfedge.h"
 
 using namespace std;
-using namespace Eigen;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -252,7 +252,7 @@ float time_step_h;
 // The char key that starts the smoothing
 const char start_smoothing_key = ' ';
 // The time in milliseconds between each smoothing frame
-static const int FRAME_RATE = 70;
+static const int FRAME_RATE = 1000;
 // The number of non-zero rows to reserve in our Sparse Operator Matrix
 static const int SPARSE_NONZERO_RESERVE = 7;
 
@@ -1585,7 +1585,7 @@ void parseFormatFile(string filename)
 
 
 // Computes the cotangent of the angle vB vAngle vC using Eigen.
-float cotan(Vector3f &vAngle, vector3f &vB, Vector3f &vC) {
+float cotan(Vector3f &vAngle, Vector3f &vB, Vector3f &vC) {
     Vector3f rayAngleB = vB - vAngle;
     Vector3f rayAngleC = vC - vAngle;
     return (rayAngleB).dot(rayAngleC) / (rayAngleB).cross(rayAngleC).norm();
@@ -1595,15 +1595,15 @@ float cotan(Vector3f &vAngle, vector3f &vB, Vector3f &vC) {
 /* Constructs the matrix operator F = (I − hΔ) to smooth the object.
  * Note: Assumes HE structures are already built and the vertices are already indexed.
  */
-SparseMatrix<float> build_F_operator(Object &obj) {
+Eigen::SparseMatrix<float> build_F_operator(Object &obj) {
     // Saves the number of vertices, accounting for our 1-indexing of the vertices
     int num_vertices = obj.hevs->size() - 1;
 
     // Initializes a sparse matrix to represent the operator matrix Δ
-    SparseMatrix<float> op_matrix(num_vertices, num_vertices);
+    Eigen::SparseMatrix<float> op_matrix(num_vertices, num_vertices);
 
     // Reserves room for non-zeros entries in each row of our Sparse Matrix
-    op_matrix.reserve( VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
+    op_matrix.reserve( Eigen::VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
 
     // Loops over all vertices where obj.hevs->at(i) is our vertex v_i
     for (int i = 1; i < obj.hevs->size(); i++) {
@@ -1617,13 +1617,13 @@ SparseMatrix<float> build_F_operator(Object &obj) {
         float total_cot_total = 0;
 
         // Iterates over all vertices v_j adjacent to v_i
-        Halfedge *curr_he = obj.hevs->at(i)->halfedge;
-        Halfedge *he = curr;
+        HE *curr_he = obj.hevs->at(i)->out;
+        HE *he = curr_he;
         do {
             // Gets the current v_j vertex, its index j, and its position
             HEV *v_j = he->next->vertex;
             int j = v_j->index;
-            Vector3f v_j_pos(v_j->x, j->y, v_j->z);
+            Vector3f v_j_pos(v_j->x, v_j->y, v_j->z);
 
             // Gets the vertices corresponding to alpha and beta and their positions
             HEV *v_across_same_face = he->next->next->vertex;
@@ -1636,12 +1636,14 @@ SparseMatrix<float> build_F_operator(Object &obj) {
                                         v_across_flip_face->z);
 
             // Computes the cotangent of the angle vB vAngle vC using Eigen
-            float cot_alpha = cotan(v_across_same_face, v_i_pos, v_j_pos);
+            float cot_alpha = cotan(v_across_same_pos, v_i_pos, v_j_pos);
             float cot_beta = cotan(v_across_flip_pos, v_i_pos, v_j_pos);
             float total_cot = cot_alpha + cot_beta;
 
             // Fills the j-th slot of row i with the coefficient for v_j
             op_matrix.insert(i - 1, j - 1) = total_cot;
+
+            // Accumulates total_cot to be the (i, i) coefficient for v_i once accumulated
             total_cot_total += total_cot;
             
             // Computes and accumulates the area of the face 
@@ -1679,15 +1681,15 @@ SparseMatrix<float> build_F_operator(Object &obj) {
 
 
     // Initializes a sparse matrix to represent the matrix operator F = (I − hΔ)
-    SparseMatrix<float> opF(num_vertices, num_vertices);
+    Eigen::SparseMatrix<float> opF(num_vertices, num_vertices);
 
     // Reserves room for non-zeros entries in each row of our Sparse Matrix
-    opF.reserve( VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
+    opF.reserve( Eigen::VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
 
     // Uses operator matrix Δ to calculate matrix operator F = (I − hΔ)
-    opF = MatrixXf::Identity(num_vertices, num_vertices) - time_step_h * op_matrix;
+    opF = Eigen::MatrixXf::Identity(num_vertices, num_vertices).sparseView() - (time_step_h * op_matrix);
 
-    // Tells Eigen to more efficiently store our Sparse Matrix
+    // Tells Eigen to more efficiently store our Sparsssssssssssssssse Matrix
     opF.makeCompressed();
 
     return opF;
@@ -1699,10 +1701,10 @@ SparseMatrix<float> build_F_operator(Object &obj) {
  */
 void computeSmoothing(Object &obj) {
     // Gets matrix operator F = (I − hΔ)
-    SparseMatrix<float> opF = build_F_operator();
+    Eigen::SparseMatrix<float> opF = build_F_operator(obj);
 
     // Initializes Eigen's Sparse solver
-    SparseLU< SparseMatrix<float>, COLAMDOrdering<int> > solver;
+    Eigen::SparseLU< Eigen::SparseMatrix<float>, Eigen::COLAMDOrdering<int> > solver;
 
     // Tailors our solver to our matrix operator
     solver.analyzePattern(opF);
@@ -1712,9 +1714,9 @@ void computeSmoothing(Object &obj) {
     int num_vertices = obj.hevs->size() - 1;
 
     // Initializes our rho vectors with our vertex positions at this current generation
-    VectorXf x_rho (num_vertices);
-    VectorXf y_rho (num_vertices);
-    VectorXf z_rho (num_vertices);
+    Eigen::VectorXf x_rho (num_vertices);
+    Eigen::VectorXf y_rho (num_vertices);
+    Eigen::VectorXf z_rho (num_vertices);
     for (int i = 1; i < obj.hevs->size(); i++) {
         HEV *v_i = obj.hevs->at(i);
         x_rho(i - 1) = v_i->x;
@@ -1723,9 +1725,9 @@ void computeSmoothing(Object &obj) {
     }
 
     // Solves for the next generation of our vertex positions phi using Eigen's Sparse solver
-    VectorXf x_phi (num_vertices);
-    VectorXf y_phi (num_vertices);
-    VectorXf z_phi (num_vertices);
+    Eigen::VectorXf x_phi (num_vertices);
+    Eigen::VectorXf y_phi (num_vertices);
+    Eigen::VectorXf z_phi (num_vertices);
     x_phi = solver.solve(x_rho);
     y_phi = solver.solve(y_rho);
     z_phi = solver.solve(z_rho);
@@ -1746,12 +1748,15 @@ void smoothNextFrame(int rate) {
     for (map<string, Object>::iterator obj_iter = objects.begin(); 
                                     obj_iter != objects.end(); obj_iter++) {
         Object &obj = objects[obj_iter->first];
+        cerr << "Smoothing...  ";
         computeSmoothing(obj);
         computeNormalsUpdateBuffers(obj);
+        cerr << "Done" << endl;
     }
 
     // Redisplays the scene with new smoothed objects
     glutPostRedisplay();
+    cerr << "Rerendered." << endl;
 
     // Sets the next smoothing to occur at the given regular rate
     glutTimerFunc(rate, smoothNextFrame, rate);
@@ -1855,12 +1860,12 @@ void destroy_objects() {
                                     obj_iter != objects.end(); obj_iter++) {
         Object &obj = objects[obj_iter->first];
 
-        for (int i = 1; i < obj.mesh->vertices.size(); i++) {
+        for (int i = 1; i < obj.mesh->vertices->size(); i++) {
             delete obj.mesh->vertices->at(i);
         }
         delete obj.mesh->vertices;
 
-        for (int i = 1; i < obj.mesh->faces.size(); i++) {
+        for (int i = 1; i < obj.mesh->faces->size(); i++) {
             delete obj.mesh->faces->at(i);
         }
         delete obj.mesh->faces;
