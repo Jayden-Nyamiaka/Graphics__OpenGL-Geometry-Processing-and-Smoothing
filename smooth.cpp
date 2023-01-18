@@ -1211,6 +1211,7 @@ void mouse_moved(int x, int y)
     }
 }
 
+
 /* 'deg2rad' function:
  * 
  * Converts given angle in degrees to radians.
@@ -1220,6 +1221,7 @@ float deg2rad(float angle)
     return angle * M_PI / 180.0;
 }
 
+
 /* 'rad2deg' function:
  * 
  * Converts given angle in radians to degrees.
@@ -1227,6 +1229,16 @@ float deg2rad(float angle)
 float rad2deg(float angle)
 {
     return angle * 180.0 / M_PI;
+}
+
+
+/* 'close_to_zero' function:
+ * 
+ * Returns true if a float is within the CLOSE_ENOUGH_BOUND to 0.
+*/
+const static float CLOSE_ENOUGH_BOUND = 0.1;
+bool close_to_zero(float num) {
+    return abs(num) < CLOSE_ENOUGH_BOUND;
 }
 
 
@@ -1276,11 +1288,12 @@ Vec3f *calculateVertexNormal(HEV *vertex)
 }
 
 
-/* Computes all vertex normals and stores them in the 
- * given object's normal buffer using HE data structures.
+/* Computes all vertex normals using HE data structures 
+ * and updates the Object's vertex and normal buffers.
  * Note: Assumes the HEV data structures have already been built for the object.
+ * Note: Assumes vertex positions in obj.mesh->vertices are updated prior.
  */
-void computeUpdateNormals(Object &obj) {
+void computeNormalsUpdateBuffers(Object &obj) {
     // Computes and stores all the area-weighted vertex normals
     for (int vIdx = 1; vIdx < obj.hevs->size(); vIdx++) {
         HEV *hev = obj.hevs->at(vIdx);
@@ -1288,9 +1301,25 @@ void computeUpdateNormals(Object &obj) {
         hev->normal = *normal;
     }
 
-    // Populates normal buffer using our mesh data and computed normals
+    // Clears the vertex and normal buffers 
+    obj.vertex_buffer.clear();
+    obj.normal_buffer.clear();
+    
+    // Populates normal and vertex buffers using our mesh data and computed normals
     for (int fIdx = 0; fIdx < obj.mesh->faces->size(); fIdx++) {
         Face *f = obj.mesh->faces->at(fIdx);
+
+        // First Vertex of the Face 
+        Vertex *v1 = obj.mesh->vertices->at(f->idx1);
+        obj.vertex_buffer.push_back(*v1);
+
+        // Second Vertex of the Face 
+        Vertex *v2 = obj.mesh->vertices->at(f->idx2);
+        obj.vertex_buffer.push_back(*v2);
+
+        // Third Vertex of the Face 
+        Vertex *v3 = obj.mesh->vertices->at(f->idx3);
+        obj.vertex_buffer.push_back(*v3);
 
         // First Normal of the Face 
         Vec3f n1 = obj.hevs->at(f->idx1)->normal;
@@ -1360,23 +1389,6 @@ void parseObjFile(string filename, Object &obj)
         obj.mesh->faces->push_back(f);
     }
 
-    // Populates vertex buffer using our mesh data
-    for (int fIdx = 0; fIdx < obj.mesh->faces->size(); fIdx++) {
-        Face *f = obj.mesh->faces->at(fIdx);
-
-        // First Vertex of the Face 
-        Vertex *v1 = obj.mesh->vertices->at(f->idx1);
-        obj.vertex_buffer.push_back(*v1);
-
-        // Second Vertex of the Face 
-        Vertex *v2 = obj.mesh->vertices->at(f->idx2);
-        obj.vertex_buffer.push_back(*v2);
-
-        // Third Vertex of the Face 
-        Vertex *v3 = obj.mesh->vertices->at(f->idx3);
-        obj.vertex_buffer.push_back(*v3);
-    }
-
     // Builds the halfedge structures
     obj.hevs = new vector<HEV *>();
     obj.hefs = new vector<HEF *>();
@@ -1387,8 +1399,8 @@ void parseObjFile(string filename, Object &obj)
         obj.hevs->at(vIdx)->index = vIdx;
     }
 
-    // Computes all vertex normals and stores them in the object's normal buffer using HE structures
-    computeUpdateNormals(obj);
+    // Computes vertex normals and populate vertex and normal buffers
+    computeNormalsUpdateBuffers(obj);
 
     // Closes the file once done
     file.close();
@@ -1572,55 +1584,70 @@ void parseFormatFile(string filename)
 }
 
 
+// Computes the cotangent of the angle vB vAngle vC using Eigen.
+float cotan(Vector3f &vAngle, vector3f &vB, Vector3f &vC) {
+    Vector3f rayAngleB = vB - vAngle;
+    Vector3f rayAngleC = vC - vAngle;
+    return (rayAngleB).dot(rayAngleC) / (rayAngleB).cross(rayAngleC).norm();
+}
+
+
 /* Constructs the matrix operator F = (I − hΔ) to smooth the object.
  * Note: Assumes HE structures are already built and the vertices are already indexed.
  */
-SparseMatrix<double> build_F_operator(Object &obj) {
+SparseMatrix<float> build_F_operator(Object &obj) {
     // Saves the number of vertices, accounting for our 1-indexing of the vertices
     int num_vertices = obj.hevs->size() - 1;
 
-    // Initializes a sparse matrix to represent the matrix operator F = (I − hΔ)
-    SparseMatrix<float> opF(num_vertices, num_vertices);
+    // Initializes a sparse matrix to represent the operator matrix Δ
+    SparseMatrix<float> op_matrix(num_vertices, num_vertices);
 
-    // reserve room for 7 non-zeros per row of B
-    opF.reserve( VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
+    // Reserves room for non-zeros entries in each row of our Sparse Matrix
+    op_matrix.reserve( VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
 
     // Loops over all vertices where obj.hevs->at(i) is our vertex v_i
     for (int i = 1; i < obj.hevs->size(); i++) {
         HEV *v_i = obj.hevs->at(i);
         Vector3f v_i_pos(v_i->x, v_i->y, v_i->z);
 
-        Halfedge *curr_he = obj.hevs->at(i)->halfedge;
-        Halfedge *he = curr;
-
+        // Accumulates the area of all the adjacent triangle faces to our current vertex
         float incident_area = 0;
 
+        // Accumulates the total cotangent sum for all adjacent vertices to be the coefficient of v_i
+        float total_cot_total = 0;
+
         // Iterates over all vertices v_j adjacent to v_i
-        do 
-        {
-            // Gets the current v_j vertex and its index j
+        Halfedge *curr_he = obj.hevs->at(i)->halfedge;
+        Halfedge *he = curr;
+        do {
+            // Gets the current v_j vertex, its index j, and its position
             HEV *v_j = he->next->vertex;
             int j = v_j->index;
-            Vector3f v_j_pos(v_i->x, v_i->y, v_i->z);
+            Vector3f v_j_pos(v_j->x, j->y, v_j->z);
 
+            // Gets the vertices corresponding to alpha and beta and their positions
+            HEV *v_across_same_face = he->next->next->vertex;
+            HEV *v_across_flip_face = he->flip->next->next->vertex;
+            Vector3f v_across_same_pos (v_across_same_face->x, 
+                                        v_across_same_face->y, 
+                                        v_across_same_face->z);
+            Vector3f v_across_flip_pos (v_across_flip_face->x, 
+                                        v_across_flip_face->y, 
+                                        v_across_flip_face->z);
+
+            // Computes the cotangent of the angle vB vAngle vC using Eigen
+            float cot_alpha = cotan(v_across_same_face, v_i_pos, v_j_pos);
+            float cot_beta = cotan(v_across_flip_pos, v_i_pos, v_j_pos);
+            float total_cot = cot_alpha + cot_beta;
+
+            // Fills the j-th slot of row i with the coefficient for v_j
+            op_matrix.insert(i - 1, j - 1) = total_cot;
+            total_cot_total += total_cot;
             
-
-
-
             // Computes and accumulates the area of the face 
             {
-                // Gets the 3 vertices of the triangle face
-                HEV *v1 = he->vertex;
-                HEV *v2 = he->next->vertex;
-                HEV *v3 = he->next->next->vertex;
-
-                // Converts the vertices to Eigen Vectors for computations
-                Vector3f v1Vec (v1->x, v1->y, v1->z);
-                Vector3f v2Vec (v2->x, v2->y, v2->z);
-                Vector3f v3Vec (v3->x, v3->y, v3->z);
-
                 // Computes the normal of the plane of the face
-                Vector3f face_normal = (v2Vec - v1Vec).cross(v3Vec - v1Vec);
+                Vector3f face_normal = (v_j_pos - v_i_pos).cross(v_across_same_pos - v_i_pos);
                 
                 // Computes the area of the triangular face
                 float face_area = 0.5 * face_normal.norm();
@@ -1629,61 +1656,98 @@ SparseMatrix<double> build_F_operator(Object &obj) {
                 incident_area += face_area;
             }
 
-            // call function to compute edge length
-            double edge_length = norm( he->vertex, he->next->vertex );
-
-            // fill the j-th slot of row i of our B matrix with appropriate value
-            opF.insert( i-1, j-1 ) = edge_length;
-
+            // Traverses to the he of the next adjacent vertex
             he = he->flip->next;
         }
-        while( he != curr_he );
+        while (he != curr_he);
+
+        // Sets all coefficients for v_i and all v_j to 0 if we have a degenerate region
+        if (close_to_zero(incident_area)) {
+            op_matrix.row(i - 1) *= 0;
+            continue;
+        }
+
+        // Fills the i-th slot of row i with the accumulated coefficient for v_i
+        op_matrix.insert(i - 1, i - 1) = -1.0 * total_cot_total;
+
+        // Updates all coefficients now that incident area has been accumulated
+        op_matrix.row(i - 1) /= (2.0 * incident_area);
     }
 
-    B.makeCompressed(); // optional; tells Eigen to more efficiently store our sparse matrix
-    return B;
+    // Tells Eigen to more efficiently store our Sparse Matrix
+    op_matrix.makeCompressed();
+
+
+    // Initializes a sparse matrix to represent the matrix operator F = (I − hΔ)
+    SparseMatrix<float> opF(num_vertices, num_vertices);
+
+    // Reserves room for non-zeros entries in each row of our Sparse Matrix
+    opF.reserve( VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
+
+    // Uses operator matrix Δ to calculate matrix operator F = (I − hΔ)
+    opF = MatrixXf::Identity(num_vertices, num_vertices) - time_step_h * op_matrix;
+
+    // Tells Eigen to more efficiently store our Sparse Matrix
+    opF.makeCompressed();
+
+    return opF;
 }
 
-// function to solve Equation 4
-void solve( std::vector<Vertex*> *vertices )
-{
-    // get our matrix representation of B
-    Eigen::SparseMatrix<double> B = build_B_operator( vertices );
 
-    // initialize Eigens sparse solver
-    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> > solver;
-
-    // the following two lines essentially tailor our solver to our operator B
-    solver.analyzePattern( B );
-    solver.factorize( B );
-
-    int num_vertices = vertices->size() - 1;
-
-    // initialize our vector representation of rho
-    Eigen::VectorXd rho_vector( num_vertices );
-    for( int i = 1; i < vertices->size(); ++i )
-        rho_vector(i - 1) = rho( i ); // assuming we can retrieve our given rho values from somewhere
-
-    // have Eigen solve for our phi_vector
-    Eigen::VectorXd phi_vector( num_vertices );
-    phi_vector = solver.solve( rho_vector );
-
-    // do something with phi_vector
-}
-
+/* Smoothes a given object by one generation.
+ * Note: Only updates vertex positions within obj.hevs, normals and buffers still need updating.
+ */
 void computeSmoothing(Object &obj) {
-    ;
+    // Gets matrix operator F = (I − hΔ)
+    SparseMatrix<float> opF = build_F_operator();
+
+    // Initializes Eigen's Sparse solver
+    SparseLU< SparseMatrix<float>, COLAMDOrdering<int> > solver;
+
+    // Tailors our solver to our matrix operator
+    solver.analyzePattern(opF);
+    solver.factorize(opF);
+
+    // Saves the number of vertices, accounting for our 1-indexing of the vertices
+    int num_vertices = obj.hevs->size() - 1;
+
+    // Initializes our rho vectors with our vertex positions at this current generation
+    VectorXf x_rho (num_vertices);
+    VectorXf y_rho (num_vertices);
+    VectorXf z_rho (num_vertices);
+    for (int i = 1; i < obj.hevs->size(); i++) {
+        HEV *v_i = obj.hevs->at(i);
+        x_rho(i - 1) = v_i->x;
+        y_rho(i - 1) = v_i->y;
+        z_rho(i - 1) = v_i->z;
+    }
+
+    // Solves for the next generation of our vertex positions phi using Eigen's Sparse solver
+    VectorXf x_phi (num_vertices);
+    VectorXf y_phi (num_vertices);
+    VectorXf z_phi (num_vertices);
+    x_phi = solver.solve(x_rho);
+    y_phi = solver.solve(y_rho);
+    z_phi = solver.solve(z_rho);
+
+    // Updates our vertex positions with the next generation
+    for (int i = 1; i < obj.hevs->size(); i++) {
+        HEV *v_i = obj.hevs->at(i);
+        v_i->x = x_phi(i - 1);
+        v_i->y = y_phi(i - 1);
+        v_i->z = z_phi(i - 1);
+    }
 }
 
 
 // Smoothes and displays the next frame at a set regular rate
 void smoothNextFrame(int rate) {
-    // Computes the Smoothing and New Normals for every Object
+    // Smoothes and updates every Object
     for (map<string, Object>::iterator obj_iter = objects.begin(); 
                                     obj_iter != objects.end(); obj_iter++) {
         Object &obj = objects[obj_iter->first];
         computeSmoothing(obj);
-        computeUpdateNormals(obj);
+        computeNormalsUpdateBuffers(obj);
     }
 
     // Redisplays the scene with new smoothed objects
@@ -1790,6 +1854,18 @@ void destroy_objects() {
     for (map<string, Object>::iterator obj_iter = objects.begin(); 
                                     obj_iter != objects.end(); obj_iter++) {
         Object &obj = objects[obj_iter->first];
+
+        for (int i = 1; i < obj.mesh->vertices.size(); i++) {
+            delete obj.mesh->vertices->at(i);
+        }
+        delete obj.mesh->vertices;
+
+        for (int i = 1; i < obj.mesh->faces.size(); i++) {
+            delete obj.mesh->faces->at(i);
+        }
+        delete obj.mesh->faces;
+
+        delete obj.mesh;
 
         delete_HE(obj.hevs, obj.hefs);
     }
