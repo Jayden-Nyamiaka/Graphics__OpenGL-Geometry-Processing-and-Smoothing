@@ -76,6 +76,7 @@ using Eigen::Matrix4f;
 #include "halfedge.h"
 
 using namespace std;
+using namespace Eigen;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -252,6 +253,8 @@ float time_step_h;
 const char start_smoothing_key = ' ';
 // The time in milliseconds between each smoothing frame
 static const int FRAME_RATE = 70;
+// The number of non-zero rows to reserve in our Sparse Operator Matrix
+static const int SPARSE_NONZERO_RESERVE = 7;
 
 // Tracks if the smoothing has started via the press of the key indicated by start_smoothing_key
 bool started_smoothing = false;
@@ -1238,9 +1241,9 @@ Vec3f *calculateVertexNormal(HEV *vertex)
     // Loops to all adjacent vertices of our given vertex
     do {
         // Gets the 3 vertices of the triangle face
-        HEV *v1 = he->face->edge->vertex;
-        HEV *v2 = he->face->edge->next->vertex;
-        HEV *v3 = he->face->edge->next->next->vertex;
+        HEV *v1 = he->vertex;
+        HEV *v2 = he->next->vertex;
+        HEV *v3 = he->next->next->vertex;
 
         // Converts the vertices to Eigen Vectors for computations
         Vector3f v1Vec (v1->x, v1->y, v1->z);
@@ -1376,6 +1379,11 @@ void parseObjFile(string filename, Object &obj)
     obj.hevs = new vector<HEV *>();
     obj.hefs = new vector<HEF *>();
     build_HE(obj.mesh, obj.hevs, obj.hefs);
+
+    // Assigns each vertex in our mesh to an index
+    for (int vIdx = 1; vIdx < obj.hevs->size(); vIdx++) {
+        obj.hevs->at(vIdx)->index = vIdx;
+    }
 
     // Computes all vertex normals and stores them in the object's normal buffer using HE structures
     computeUpdateNormals(obj);
@@ -1561,6 +1569,105 @@ void parseFormatFile(string filename)
     file.close();
 }
 
+
+/* Constructs the matrix operator F = (I − hΔ) to smooth the object.
+ * Note: Assumes HE structures are already built and the vertices are already indexed.
+ */
+SparseMatrix<double> build_F_operator(Object &obj) {
+    // Saves the number of vertices, accounting for our 1-indexing of the vertices
+    int num_vertices = obj.hevs->size() - 1;
+
+    // Initializes a sparse matrix to represent the matrix operator F = (I − hΔ)
+    SparseMatrix<float> opF(num_vertices, num_vertices);
+
+    // reserve room for 7 non-zeros per row of B
+    opF.reserve( VectorXi::Constant(num_vertices, SPARSE_NONZERO_RESERVE) );
+
+    // Loops over all vertices where obj.hevs->at(i) is our vertex v_i
+    for (int i = 1; i < obj.hevs->size(); i++) {
+        HEV *v_i = obj.hevs->at(i);
+        Vector3f v_i_pos(v_i->x, v_i->y, v_i->z);
+
+        Halfedge *curr_he = obj.hevs->at(i)->halfedge;
+        Halfedge *he = curr;
+
+        float incident_area = 0;
+
+        // Iterates over all vertices v_j adjacent to v_i
+        do 
+        {
+            // Gets the current v_j vertex and its index j
+            HEV *v_j = he->next->vertex;
+            int j = v_j->index;
+            Vector3f v_j_pos(v_i->x, v_i->y, v_i->z);
+
+            
+
+
+
+            // Computes and accumulates the area of the face 
+            {
+                // Gets the 3 vertices of the triangle face
+                HEV *v1 = he->vertex;
+                HEV *v2 = he->next->vertex;
+                HEV *v3 = he->next->next->vertex;
+
+                // Converts the vertices to Eigen Vectors for computations
+                Vector3f v1Vec (v1->x, v1->y, v1->z);
+                Vector3f v2Vec (v2->x, v2->y, v2->z);
+                Vector3f v3Vec (v3->x, v3->y, v3->z);
+
+                // Computes the normal of the plane of the face
+                Vector3f face_normal = (v2Vec - v1Vec).cross(v3Vec - v1Vec);
+                
+                // Computes the area of the triangular face
+                float face_area = 0.5 * face_normal.norm();
+
+                // Accumulates the area of the face
+                incident_area += face_area;
+            }
+
+            // call function to compute edge length
+            double edge_length = norm( he->vertex, he->next->vertex );
+
+            // fill the j-th slot of row i of our B matrix with appropriate value
+            opF.insert( i-1, j-1 ) = edge_length;
+
+            he = he->flip->next;
+        }
+        while( he != curr_he );
+    }
+
+    B.makeCompressed(); // optional; tells Eigen to more efficiently store our sparse matrix
+    return B;
+}
+
+// function to solve Equation 4
+void solve( std::vector<Vertex*> *vertices )
+{
+    // get our matrix representation of B
+    Eigen::SparseMatrix<double> B = build_B_operator( vertices );
+
+    // initialize Eigens sparse solver
+    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int> > solver;
+
+    // the following two lines essentially tailor our solver to our operator B
+    solver.analyzePattern( B );
+    solver.factorize( B );
+
+    int num_vertices = vertices->size() - 1;
+
+    // initialize our vector representation of rho
+    Eigen::VectorXd rho_vector( num_vertices );
+    for( int i = 1; i < vertices->size(); ++i )
+        rho_vector(i - 1) = rho( i ); // assuming we can retrieve our given rho values from somewhere
+
+    // have Eigen solve for our phi_vector
+    Eigen::VectorXd phi_vector( num_vertices );
+    phi_vector = solver.solve( rho_vector );
+
+    // do something with phi_vector
+}
 
 void computeSmoothing(Object &obj) {
     ;
