@@ -246,10 +246,15 @@ struct Object
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-/* Time step (in __________) given by the user that controls 
- * the speed of the smoothing 
- */
+// Time step given by the user that controls the speed of the smoothing 
 float time_step_h;
+// The char key that starts the smoothing
+const char start_smoothing_key = ' ';
+// The time in milliseconds between each smoothing frame
+static const int FRAME_RATE = 70;
+
+// Tracks if the smoothing has started via the press of the key indicated by start_smoothing_key
+bool started_smoothing = false;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1221,91 +1226,6 @@ float rad2deg(float angle)
     return angle * 180.0 / M_PI;
 }
 
-/* 'key_pressed' function:
- * 
- * This function is meant to respond to key pressed on the keyboard. The
- * parameters are:
- *
- * - unsigned char key: the character of the key itself or the ASCII value of
- *                      of the key
- * - int x: the x screen coordinate of where the mouse was when the key was pressed
- * - int y: the y screen coordinate of where the mouse was when the key was pressed
- *
- * Our function is pretty straightforward as you can see below. We also do not make
- * use of the 'x' and 'y' parameters.
- */
-void key_pressed(unsigned char key, int x, int y)
-{
-    /* If 'q' is pressed, quit the program.
-     */
-    if (key == 'q')
-    {
-        exit(0);
-    }
-    /* If 't' is pressed, toggle our 'wireframe_mode' boolean to make OpenGL
-     * render our cubes as surfaces of wireframes.
-     */
-    else if (key == 't')
-    {
-        wireframe_mode = !wireframe_mode;
-        /* Tell OpenGL that it needs to re-render our scene with the cubes
-         * now as wireframes (or surfaces if they were wireframes before).
-         */
-        glutPostRedisplay();
-    }
-    else
-    {
-        /* These might look a bit complicated, but all we are really doing is
-         * using our current change in the horizontal camera angle (ie. the
-         * value of 'x_view_angle') to compute the correct changes in our x and
-         * z coordinates in camera space as we move forward, backward, to the left,
-         * or to the right.
-         *
-         * 'step_size' is an arbitrary value to determine how "big" our steps
-         * are.
-         *
-         * We make the x and z coordinate changes to the camera position, since
-         * moving forward, backward, etc is basically just shifting our view
-         * of the scene.
-         */
-        
-        float x_view_rad = deg2rad(x_view_angle);
-        
-        /* 'w' for step forward
-         */
-        if(key == 'w')
-        {
-            cam_position[0] += step_size * sin(x_view_rad);
-            cam_position[2] -= step_size * cos(x_view_rad);
-            glutPostRedisplay();
-        }
-        /* 'a' for step left
-         */
-        else if(key == 'a')
-        {
-            cam_position[0] -= step_size * cos(x_view_rad);
-            cam_position[2] -= step_size * sin(x_view_rad);
-            glutPostRedisplay();
-        }
-        /* 's' for step backward
-         */
-        else if(key == 's')
-        {
-            cam_position[0] -= step_size * sin(x_view_rad);
-            cam_position[2] += step_size * cos(x_view_rad);
-            glutPostRedisplay();
-        }
-        /* 'd' for step right
-         */
-        else if(key == 'd')
-        {
-            cam_position[0] += step_size * cos(x_view_rad);
-            cam_position[2] += step_size * sin(x_view_rad);
-            glutPostRedisplay();
-        }
-    }
-}
-
 
 // Computes the area-weighted normal of a vertex using the halfedge data
 Vec3f *calculateVertexNormal(HEV *vertex)
@@ -1348,6 +1268,37 @@ Vec3f *calculateVertexNormal(HEV *vertex)
     Vec3f *n = new Vec3f;
     *n = {normal[0], normal[1], normal[2]};
     return n;
+}
+
+
+/* Computes all vertex normals and stores them in the 
+ * given object's normal buffer using HE data structures.
+ * Note: Assumes the HEV data structures have already been built for the object.
+ */
+void computeUpdateNormals(Object &obj) {
+    // Computes and stores all the area-weighted vertex normals
+    for (int vIdx = 1; vIdx < obj.hevs->size(); vIdx++) {
+        HEV *hev = obj.hevs->at(vIdx);
+        Vec3f *normal = calculateVertexNormal(hev);
+        hev->normal = *normal;
+    }
+
+    // Populates normal buffer using our mesh data and computed normals
+    for (int fIdx = 0; fIdx < obj.mesh->faces->size(); fIdx++) {
+        Face *f = obj.mesh->faces->at(fIdx);
+
+        // First Normal of the Face 
+        Vec3f n1 = obj.hevs->at(f->idx1)->normal;
+        obj.normal_buffer.push_back(n1);
+
+        // Second Normal of the Face 
+        Vec3f n2 = obj.hevs->at(f->idx2)->normal;
+        obj.normal_buffer.push_back(n2);
+
+        // Third Normal of the Face 
+        Vec3f n3 = obj.hevs->at(f->idx3)->normal;
+        obj.normal_buffer.push_back(n3);
+    }
 }
 
 
@@ -1404,41 +1355,32 @@ void parseObjFile(string filename, Object &obj)
         obj.mesh->faces->push_back(f);
     }
 
-    // Builds the halfedge structures
-    obj.hevs = new vector<HEV *>();
-    obj.hefs = new vector<HEF *>();
-    build_HE(obj.mesh, obj.hevs, obj.hefs);
-
-    // Computes and stores all the area-weighted vertex normals
-    for (int vIdx = 1; vIdx < obj.hevs->size(); vIdx++) {
-        HEV *hev = obj.hevs->at(vIdx);
-        Vec3f *normal = calculateVertexNormal(hev);
-        hev->normal = *normal;
-    }
-
-    // Populates vertex and normal buffers using our mesh data and computed normals
+    // Populates vertex buffer using our mesh data
     for (int fIdx = 0; fIdx < obj.mesh->faces->size(); fIdx++) {
         Face *f = obj.mesh->faces->at(fIdx);
 
         // First Vertex of the Face 
         Vertex *v1 = obj.mesh->vertices->at(f->idx1);
-        Vec3f n1 = obj.hevs->at(f->idx1)->normal;
         obj.vertex_buffer.push_back(*v1);
-        obj.normal_buffer.push_back(n1);
 
         // Second Vertex of the Face 
         Vertex *v2 = obj.mesh->vertices->at(f->idx2);
-        Vec3f n2 = obj.hevs->at(f->idx2)->normal;
         obj.vertex_buffer.push_back(*v2);
-        obj.normal_buffer.push_back(n2);
 
         // Third Vertex of the Face 
         Vertex *v3 = obj.mesh->vertices->at(f->idx3);
-        Vec3f n3 = obj.hevs->at(f->idx3)->normal;
         obj.vertex_buffer.push_back(*v3);
-        obj.normal_buffer.push_back(n3);
     }
 
+    // Builds the halfedge structures
+    obj.hevs = new vector<HEV *>();
+    obj.hefs = new vector<HEF *>();
+    build_HE(obj.mesh, obj.hevs, obj.hefs);
+
+    // Computes all vertex normals and stores them in the object's normal buffer using HE structures
+    computeUpdateNormals(obj);
+
+    // Closes the file once done
     file.close();
 }
 
@@ -1619,6 +1561,122 @@ void parseFormatFile(string filename)
     file.close();
 }
 
+
+void computeSmoothing(Object &obj) {
+    ;
+}
+
+
+// Smoothes and displays the next frame at a set regular rate
+void smoothNextFrame(int rate) {
+    // Computes the Smoothing and New Normals for every Object
+    for (map<string, Object>::iterator obj_iter = objects.begin(); 
+                                    obj_iter != objects.end(); obj_iter++) {
+        Object &obj = objects[obj_iter->first];
+        computeSmoothing(obj);
+        computeUpdateNormals(obj);
+    }
+
+    // Redisplays the scene with new smoothed objects
+    glutPostRedisplay();
+
+    // Sets the next smoothing to occur at the given regular rate
+    glutTimerFunc(rate, smoothNextFrame, rate);
+}
+
+
+/* 'key_pressed' function:
+ * 
+ * This function is meant to respond to key pressed on the keyboard. The
+ * parameters are:
+ *
+ * - unsigned char key: the character of the key itself or the ASCII value of
+ *                      of the key
+ * - int x: the x screen coordinate of where the mouse was when the key was pressed
+ * - int y: the y screen coordinate of where the mouse was when the key was pressed
+ *
+ * Our function is pretty straightforward as you can see below. We also do not make
+ * use of the 'x' and 'y' parameters.
+ */
+void key_pressed(unsigned char key, int x, int y)
+{
+    /* If 'q' is pressed, quit the program.
+     */
+    if (key == 'q')
+    {
+        exit(0);
+    }
+    /* If 't' is pressed, toggle our 'wireframe_mode' boolean to make OpenGL
+     * render our cubes as surfaces of wireframes.
+     */
+    else if (key == 't')
+    {
+        wireframe_mode = !wireframe_mode;
+        /* Tell OpenGL that it needs to re-render our scene with the cubes
+         * now as wireframes (or surfaces if they were wireframes before).
+         */
+        glutPostRedisplay();
+    }
+    else
+    {
+        /* These might look a bit complicated, but all we are really doing is
+         * using our current change in the horizontal camera angle (ie. the
+         * value of 'x_view_angle') to compute the correct changes in our x and
+         * z coordinates in camera space as we move forward, backward, to the left,
+         * or to the right.
+         *
+         * 'step_size' is an arbitrary value to determine how "big" our steps
+         * are.
+         *
+         * We make the x and z coordinate changes to the camera position, since
+         * moving forward, backward, etc is basically just shifting our view
+         * of the scene.
+         */
+        float x_view_rad = deg2rad(x_view_angle);
+
+        // Pressing the key starts the smoothing
+        if (key == start_smoothing_key)
+        {  
+            glutTimerFunc(FRAME_RATE, smoothNextFrame, FRAME_RATE);
+        }
+
+        /* 'w' for step forward
+         */
+        else if(key == 'w')
+        {
+            cam_position[0] += step_size * sin(x_view_rad);
+            cam_position[2] -= step_size * cos(x_view_rad);
+            glutPostRedisplay();
+        }
+        /* 'a' for step left
+         */
+        else if(key == 'a')
+        {
+            cam_position[0] -= step_size * cos(x_view_rad);
+            cam_position[2] -= step_size * sin(x_view_rad);
+            glutPostRedisplay();
+        }
+        /* 's' for step backward
+         */
+        else if(key == 's')
+        {
+            cam_position[0] -= step_size * sin(x_view_rad);
+            cam_position[2] += step_size * cos(x_view_rad);
+            glutPostRedisplay();
+        }
+        /* 'd' for step right
+         */
+        else if(key == 'd')
+        {
+            cam_position[0] += step_size * cos(x_view_rad);
+            cam_position[2] += step_size * sin(x_view_rad);
+            glutPostRedisplay();
+        }
+    }
+}
+
+
+// Frees all heap allocated data for the program
 void destroy_objects() {
     for (map<string, Object>::iterator obj_iter = objects.begin(); 
                                     obj_iter != objects.end(); obj_iter++) {

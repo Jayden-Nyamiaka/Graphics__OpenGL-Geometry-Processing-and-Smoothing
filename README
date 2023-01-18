@@ -10,3 +10,5 @@ Compile and Execute Instructions:
     3) Run ./opengl [scene_description_file.txt] [xres] [yres] to have that scene open in OpenGL.
 
     4) Run "make clean" to delete any generated files.
+
+    Put that space is the start smoothing key
