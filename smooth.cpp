@@ -1578,6 +1578,13 @@ float cotan(Vector3f &vAngle, Vector3f &vB, Vector3f &vC) {
 }
 
 
+
+bool is_decimal(float num) {
+    return !(num - (int)num == 0);
+}
+
+
+
 /* Constructs the matrix operator F = (I − hΔ) to smooth the object.
  * Note: Assumes HE structures are already built and the vertices are already indexed.
  */
@@ -1628,6 +1635,7 @@ Eigen::SparseMatrix<float> build_F_operator(Object &obj) {
 
             // Fills the j-th slot of row i with the coefficient for v_j
             op_matrix.insert(i - 1, j - 1) = total_cot;
+            cerr << total_cot << endl;
 
             // Accumulates total_cot to be the (i, i) coefficient for v_i once accumulated
             total_cot_total += total_cot;
@@ -1678,12 +1686,16 @@ Eigen::SparseMatrix<float> build_F_operator(Object &obj) {
     // Tells Eigen to more efficiently store our Sparsssssssssssssssse Matrix
     opF.makeCompressed();
 
+    // DELETEETETETETETETET
+
+
+
+
+    
     for (int i = 0; i < num_vertices; i++) {
-        for (int j = 0; j < num_vertices; j++) {
-            float coeff = opF.coeffRef(i, j);
-            if (coeff != 0 && coeff != 1) {
-                cerr << "(" << i << ", " << j << "): " << coeff << endl;
-            }
+        float row_sum = opF.row(i).sum();
+        if (is_decimal(row_sum)) {
+            cerr << i << ": " << row_sum << endl;
         }
     }
     return opF;
