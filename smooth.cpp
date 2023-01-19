@@ -259,9 +259,6 @@ static const int SPARSE_NONZERO_RESERVE = 7;
 bool started_smoothing = false;
 // Time step given by the user that controls the speed of the smoothing 
 float time_step_h;
-/* Multiplies itself y the time step h each smoothing to get the next time step,
- * resulting in more significant smoothing with each generation */
-float step_multiplier;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1753,9 +1750,6 @@ void smoothNextFrame(int rate) {
     // Redisplays the scene with new smoothed objects
     glutPostRedisplay();
 
-    // Updates the time step h with the optional user set step muultiplier
-    time_step_h *= step_multiplier;
-
     // Sets the next smoothing to occur at the given regular rate
     glutTimerFunc(rate, smoothNextFrame, rate);
 }
@@ -1895,9 +1889,9 @@ void usage(void) {
 int main(int argc, char* argv[])
 {
     /* Checks that the user inputted the right parameters into the command line
-     * and stores xres, yres, and filename to their respective fields
+     * and stores the user's parameters to their respective fields
      */
-    if (argc != 5 && argc != 6) {
+    if (argc != 5) {
         usage();
     }
     int xres = stoi(argv[2]);
@@ -1905,13 +1899,6 @@ int main(int argc, char* argv[])
     time_step_h = stof(argv[4]);
     if (xres <= 0 || yres <= 0 || time_step_h <= 0) {
         usage();
-    }
-    step_multiplier = 1.0f;
-    if (argc == 6) {
-        step_multiplier = stoi(argv[5]);
-        if (step_multiplier >= 5 || step_multiplier <= 0) {
-            step_multiplier = 1.0f;
-        }
     }
 
     /* 'glutInit' intializes the GLUT (Graphics Library Utility Toolkit) library.
