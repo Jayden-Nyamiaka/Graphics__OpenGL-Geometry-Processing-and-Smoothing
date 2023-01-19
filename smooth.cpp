@@ -247,8 +247,8 @@ struct Object
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Time step given by the user that controls the speed of the smoothing 
-float time_step_h;
+/* Variables that control smoothing rate and computation */
+
 // The char key that starts the smoothing
 const char start_smoothing_key = ' ';
 // The manually set time in milliseconds between each smoothing frame
@@ -257,6 +257,11 @@ static const int FRAME_RATE = 1000;
 static const int SPARSE_NONZERO_RESERVE = 7;
 // Tracks if the smoothing has started via the press of the key indicated by start_smoothing_key
 bool started_smoothing = false;
+// Time step given by the user that controls the speed of the smoothing 
+float time_step_h;
+/* Multiplies itself y the time step h each smoothing to get the next time step,
+ * resulting in more significant smoothing with each generation */
+float step_multiplier;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1741,15 +1746,15 @@ void smoothNextFrame(int rate) {
     for (map<string, Object>::iterator obj_iter = objects.begin(); 
                                     obj_iter != objects.end(); obj_iter++) {
         Object &obj = objects[obj_iter->first];
-        cerr << "Smoothing...  \n\n";
         computeSmoothing(obj);
         computeNormalsUpdateBuffers(obj);
-        
-        cerr << "Done" << endl;
     }
 
     // Redisplays the scene with new smoothed objects
     glutPostRedisplay();
+
+    // Updates the time step h with the optional user set step muultiplier
+    time_step_h *= step_multiplier;
 
     // Sets the next smoothing to occur at the given regular rate
     glutTimerFunc(rate, smoothNextFrame, rate);
@@ -1875,9 +1880,10 @@ void destroy_objects() {
 
 
 void usage(void) {
-    cerr << "usage: scene_description_file.txt xres yres h\n\t"
+    cerr << "usage: scene_description_file.txt xres yres h -h_mult\n\t"
             "xres, yres (screen resolution) must be positive integers\n\t"
-            "h (smoothing time step) must be a positive float (large values may cause error)\n";
+            "h (smoothing time step) must be a positive float\n\t"
+            "h_mult (optional) multiplies h each smoothing generation and must be a positive float < 5\n";
     exit(1);
 }
 
@@ -1891,7 +1897,7 @@ int main(int argc, char* argv[])
     /* Checks that the user inputted the right parameters into the command line
      * and stores xres, yres, and filename to their respective fields
      */
-    if (argc != 5) {
+    if (argc != 5 && argc != 6) {
         usage();
     }
     int xres = stoi(argv[2]);
@@ -1899,6 +1905,13 @@ int main(int argc, char* argv[])
     time_step_h = stof(argv[4]);
     if (xres <= 0 || yres <= 0 || time_step_h <= 0) {
         usage();
+    }
+    step_multiplier = 1.0f;
+    if (argc == 6) {
+        step_multiplier = stoi(argv[5]);
+        if (step_multiplier >= 5 || step_multiplier <= 0) {
+            step_multiplier = 1.0f;
+        }
     }
 
     /* 'glutInit' intializes the GLUT (Graphics Library Utility Toolkit) library.
