@@ -255,7 +255,6 @@ const char start_smoothing_key = ' ';
 static const int FRAME_RATE = 1000;
 // The number of non-zero rows to reserve in our Sparse Operator Matrix
 static const int SPARSE_NONZERO_RESERVE = 7;
-
 // Tracks if the smoothing has started via the press of the key indicated by start_smoothing_key
 bool started_smoothing = false;
 
@@ -1121,19 +1120,6 @@ void draw_objects()
          */
         glPopMatrix();
     }
-    
-    
-    /* The following code segment uses OpenGL's built-in sphere rendering
-     * function to render the blue-ground that you are walking on when
-     * you run the program. The blue-ground is just the surface of a big
-     * sphere of radius 100.
-     */
-    glPushMatrix();
-    {
-        glTranslatef(0, -103, 0);
-        glutSolidSphere(100, 100, 100);
-    }
-    glPopMatrix();
 }
 
 /* 'mouse_pressed' function:
@@ -1692,6 +1678,14 @@ Eigen::SparseMatrix<float> build_F_operator(Object &obj) {
     // Tells Eigen to more efficiently store our Sparsssssssssssssssse Matrix
     opF.makeCompressed();
 
+    for (int i = 0; i < num_vertices; i++) {
+        for (int j = 0; j < num_vertices; j++) {
+            float coeff = opF.coeffRef(i, j);
+            if (coeff != 0 && coeff != 1) {
+                cerr << "(" << i << ", " << j << "): " << coeff << endl;
+            }
+        }
+    }
     return opF;
 }
 
@@ -1722,6 +1716,16 @@ void computeSmoothing(Object &obj) {
         x_rho(i - 1) = v_i->x;
         y_rho(i - 1) = v_i->y;
         z_rho(i - 1) = v_i->z;
+
+
+
+
+
+
+// DELETE
+        if (i < 9) {
+            cerr << "Before i " << v_i->x << " " << v_i->y << " " << v_i->z << endl;
+        }
     }
 
     // Solves for the next generation of our vertex positions phi using Eigen's Sparse solver
@@ -1732,12 +1736,19 @@ void computeSmoothing(Object &obj) {
     y_phi = solver.solve(y_rho);
     z_phi = solver.solve(z_rho);
 
+    cerr << ((x_rho == x_phi)) << endl;
+    cerr << "time_step_h = " << time_step_h << endl;
     // Updates our vertex positions with the next generation
     for (int i = 1; i < obj.hevs->size(); i++) {
         HEV *v_i = obj.hevs->at(i);
         v_i->x = x_phi(i - 1);
         v_i->y = y_phi(i - 1);
         v_i->z = z_phi(i - 1);
+
+
+        if (i < 9) {
+            cerr << "After i " << v_i->x << " " << v_i->y << " " << v_i->z << endl;
+        }
     }
 }
 
@@ -1748,9 +1759,19 @@ void smoothNextFrame(int rate) {
     for (map<string, Object>::iterator obj_iter = objects.begin(); 
                                     obj_iter != objects.end(); obj_iter++) {
         Object &obj = objects[obj_iter->first];
-        cerr << "Smoothing...  ";
+        cerr << "Smoothing...  \n\n";
         computeSmoothing(obj);
         computeNormalsUpdateBuffers(obj);
+
+        //Vertex *vp = obj.mesh->vertices->at(obj.mesh->faces->at(0)->idx1);
+        //cerr << "Mesh Real " << vp->x << " " << vp->y << " " << vp->z << endl;
+        //if (obj.vertex_buffer.size() > 0) {
+        
+            //Vertex vb = obj.vertex_buffer[0];
+            //cerr << "Buffer " << vb.x << " " << vb.y << " " << vb.z << endl << endl;
+            
+        //}
+        
         cerr << "Done" << endl;
     }
 
@@ -1759,7 +1780,107 @@ void smoothNextFrame(int rate) {
     cerr << "Rerendered." << endl;
 
     // Sets the next smoothing to occur at the given regular rate
-    glutTimerFunc(rate, smoothNextFrame, rate);
+    // 
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    ///
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //glutTimerFunc(rate, smoothNextFrame, rate);
 }
 
 
@@ -1815,7 +1936,111 @@ void key_pressed(unsigned char key, int x, int y)
         // Pressing the key starts the smoothing
         if (key == start_smoothing_key)
         {  
-            glutTimerFunc(FRAME_RATE, smoothNextFrame, FRAME_RATE);
+            if (!started_smoothing) {
+                glutTimerFunc(FRAME_RATE, smoothNextFrame, FRAME_RATE);
+                // 
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    ///
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    //started_smoothing = true;
+            }
+            
         }
 
         /* 'w' for step forward

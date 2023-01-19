@@ -3,6 +3,10 @@
         "ostream": "cpp",
         "iostream": "cpp",
         "core": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
+        "initializer_list": "cpp",
+        "utility": "cpp"
     }
 }
