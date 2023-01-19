@@ -1,16 +1,27 @@
 Compile and Execute Instructions:
 
-    1) The code has 3 executables that can be generated from the Makefile: 
-            - opengl (the Quarternion Implementation of ArcBall)
-            - opengl_matrix (the Matrix Implementation of ArcBall)
-            - demo (the original Demo that lets you move around with wasd)
+    1) The run "make all" to generate the executable, which cleans before compiling.
 
-    2) Run "make opengl" to generate the executable that runs OpenGL with ArcBall.
+    2) Run ./smooth scene_description_file.txt xres yres to have the scene open in OpenGL.
+        - Press the space key to start the smoothing
+        - The smoothing occurs at a manually set constant rate: every 2 seconds
 
-    3) Run ./opengl [scene_description_file.txt] [xres] [yres] to have that scene open in OpenGL.
+    3) Run "make clean" to delete any generated files.
 
-    4) Run "make clean" to delete any generated files.
-
-    Put that space is the start smoothing key
-
-    Explain building opF in README
+Thought Process on building matrix F:
+        At first, I was very confused on how to build F = I − hΔ. I didn't know whether we should 
+        start by building the operator matrix Δ first or just try computing F directly, and I had 
+        trouble taking the example of matrix B in the notes and extending it to our case. After 
+        some help, however, I was able to understand what's happening by writing out a full row of 
+        (I − hΔ) x_h = x_0 using (Δx)_i = (1/2A) ∑_i~j [(cot α_j + cot β_j) (x_j − x_i)]. The key 
+        to my understanding was distributing the op_j = (cot α_j + cot β_j) term to both the x_j  
+        and -x_i terms, yielding op_j * x_j - op_j * x_i. From there, I was able to visualize that 
+        we need to accumulate all the op_j terms for one row as the coefficient for the x_i term 
+        by factoring in the following way:
+                (Δx)_i = (1/2A) ∑_i~j [op_j * (x_j − x_i)]
+                       = (1/2A) ∑_i~j (op_j * x_j - op_j * x_i) 
+                       = (1/2A) * [∑_i~j (op_j * x_j) - (∑_i~j op_j) * x_i]
+        The result (Δx)_i = (1/2A) * [∑_i~j (op_j * x_j) - (∑_i~j op_j) * x_i] revealed how to 
+        construct the operator matrix Δ. It showed why the coefficient of every (i, j) point in 
+        the matrix Δ is (1/2A) op_j when i != j and - (1/2A) (∑_i~j op_j) when i == j. After that, 
+        it all made sense, and I was able to implement the construction of the matrix F = I − hΔ. 
