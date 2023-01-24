@@ -1874,10 +1874,9 @@ void destroy_objects() {
 
 
 void usage(void) {
-    cerr << "usage: scene_description_file.txt xres yres h -h_mult\n\t"
+    cerr << "usage: scene_description_file.txt xres yres h\n\t"
             "xres, yres (screen resolution) must be positive integers\n\t"
-            "h (smoothing time step) must be a positive float\n\t"
-            "h_mult (optional) multiplies h each smoothing generation and must be a positive float < 5\n";
+            "h (smoothing time step) must be a positive float\n";
     exit(1);
 }
 

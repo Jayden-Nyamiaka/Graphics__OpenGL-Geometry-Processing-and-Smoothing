@@ -25,3 +25,10 @@ Thought Process on building matrix F:
         construct the operator matrix Δ. It showed why the coefficient of every (i, j) point in 
         the matrix Δ is (1/2A) op_j when i != j and - (1/2A) (∑_i~j op_j) when i == j. After that, 
         it all made sense, and I was able to implement the construction of the matrix F = I − hΔ. 
+
+Notes:
+        There is a small bug present in how the vertex positions get updated. The code that builds 
+        the matrix operator has been confirmed correct, so the error is in either how sparse 
+        matrices are used or how the matrix operator is solved to get the vertex positions of each 
+        subsequent generation. Smoothing still occurs, but the effect becomes stagnant and 
+        undesirable after a certain degree. 
